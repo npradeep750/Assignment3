@@ -2,14 +2,18 @@ from collections import defaultdict
 from pathlib import Path
 import json
 import warnings
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup
+try:
+    from bs4 import XMLParsedAsHTMLWarning
+except ImportError:
+    XMLParsedAsHTMLWarning = None
 from nltk.stem import PorterStemmer
 
 # Suppress the XML parsed as HTML warning
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 documents = {}
-directory = Path("./ANALYST/")
+directory = Path("./DEV/")
 index = defaultdict(list)
 stemmer = PorterStemmer()
 
