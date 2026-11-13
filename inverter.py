@@ -2,7 +2,7 @@ import os, json, heapq, warnings
 from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urldefrag
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning, MarkupResemblesLocatorWarning
 from nltk.stem import PorterStemmer
 try:
     import lxml
@@ -11,6 +11,7 @@ except ImportError:
     PARSER = "html.parser"
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 directory = Path("./DEV/")
 PARTIAL_NUM = 5000

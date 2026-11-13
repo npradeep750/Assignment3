@@ -1,3 +1,9 @@
 ANALYST/
 DEV/
 **/.DS_Store
+docs_urls.json
+index.txt
+report.txt
+offsets.json
+__pycache__/
+*.pyc
