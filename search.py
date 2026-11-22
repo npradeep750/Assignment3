@@ -13,7 +13,7 @@ TOP_K = 5
 IMPORTANT_BOOST = 0.5 # for titles/headings to make them more important than body text
 
 REPORT_QUERIES = ["cristina lopes", "machine learning", "ACM", "master of software engineering"]
-
+SLOW_MS = 300
 
 def query_terms(query):
     terms = []
@@ -123,6 +123,23 @@ def run_query(searcher, query):
     elapsed_ms = (time.perf_counter() - start) * 1000
     print_results(query, results, elapsed_ms)
 
+def run_eval(searcher, path="TEST.txt"):
+    """Run every non-commented query in TEST.txt and flag problems."""
+    queries = []
+    with open(path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                queries.append(line)
+
+    for query in queries:
+        start = time.perf_counter()
+        results = searcher.search(query)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        flag = "NO RESULTS" if not results else ("SLOW" if elapsed_ms > SLOW_MS else "ok")
+        top_url = results[0][1] if results else "-"
+        print(f"{flag:10} {elapsed_ms:7.1f} ms  {query!r:40} top: {top_url}")
+
 def main():
     try:
         searcher = Searcher()
@@ -134,6 +151,10 @@ def main():
         if sys.argv[1:] == ["--report"]:
             for query in REPORT_QUERIES:
                 run_query(searcher, query)
+            return 0
+
+        if sys.argv[1:] == ["--eval"]:
+            run_eval(searcher)
             return 0
         
         if len(sys.argv) > 1:
