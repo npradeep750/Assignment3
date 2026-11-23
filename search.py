@@ -12,7 +12,7 @@ OFFSET_PATH = Path("offsets.json")
 DOCS_PATH = Path("docs_urls.json")
 TOP_K = 5
 NORMS_PATH = Path("doc_norms.json")
-NORMS_POWER = 1.0 # 1 = full cosine length normalization, 0 is none
+NORMS_POWER = 0.5 # 1 = full cosine length normalization, 0 is none
 
 REPORT_QUERIES = ["cristina lopes", "machine learning", "ACM", "master of software engineering"]
 SLOW_MS = 300
@@ -76,6 +76,7 @@ class Searcher:
 
 
     def _postings(self, term):
+        """Gets the postings from """
         offset = self.offsets.get(term)
         if offset is None:
             return {}

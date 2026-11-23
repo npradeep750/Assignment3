@@ -1,39 +1,53 @@
-# Every non-commented line counts as a query that gets evaluated by the search engine.
-# For Milestone 3. Run with python3 search.py --eval
+# TEST.txt - test queries for the search engine (Milestone 3)
+# Run all of them with:  python3 search.py --eval
+# Lines starting with # are comments.
 
-# Milestone 2 queries:
+# WHAT WAS CHANGED TO IMPROVE THE POOR QUERIES
+# 1. Length normalization (cosine similarity). Each page's score is divided by the length of its tf-idf vector,
+#    so a long page does not win just because it has more words. At first this was full strength, but then very
+#    short pages like slides took over many results, so the strength was lowered with NORMS_POWER = 0.5 in search.py.
+# 2. Partial-match fallback. Pages with all query words are listed first. If fewer than 5 have them all, pages with
+#    some of the words fill the rest. A word that is not in the index (typo) is skipped instead of making the whole
+#    query return nothing.
+# 3. Speed: each query word's postings are read straight from index.txt with a seek (the index is never loaded into
+#    memory), the AND starts from the shortest postings list, and long postings lists are parsed in bulk.
+# 4. Exact duplicate pages are skipped while indexing.
+#
+# EFFICIENCY: no query took longer than 300 ms. The slowest ones use very common words ("the and or", "to be or not
+#    to be", "master of software engineering") because the postings lists of those words are huge.
+ 
+# ===== GOOD: relevant top result from the start, and it stayed good =====
 cristina lopes
-machine learning
 ACM
 master of software engineering
-
-# Other queries expected to do well:
 computer science
 science of computers
-operating systems
-information retrieval
-
-# all queries below are suspected to not do as well
-
-# Sequence of very common words:
-to be or not to be
-the and or
-what is the best
 how do i code?
-
-# Typos
-compter sceince
-informtion retreival
 isc
-
-# One very common word:
-irvine
-research
-uci
-of
-a
-
-# Contains numbers/dashes:
 cs 121 information retrieval
 cs121 information retrieval
 spanish-speaking people
+ 
+# POOR at first, fixed: the top result was a single slide page (a tiny page)
+# With NORMS_POWER = 0.5 the top result is now a real page.
+operating systems
+irvine
+research
+what is the best
+ 
+# POOR at first, changed but still low quality: only very common words, so there is no topic
+# The top result was a single slide; now it is a full page, but any page full of common words can win.
+to be or not to be
+the and or
+ 
+# POOR, still weak: a tiny slide page is still on top, or the top page is a wiki revision
+information retrieval
+uci
+of
+a
+machine learning
+ 
+# ===== POOR: misspelled words =====
+# A plain AND search would find nothing. The partial-match fallback can return pages that have some of the words though.
+compter sceince
+informtion retreival

@@ -1,4 +1,4 @@
-import os, json, heapq, warnings
+import os, json, heapq, warnings, hashlib
 from collections import defaultdict
 from pathlib import Path
 from urllib.parse import urldefrag
@@ -20,6 +20,8 @@ stemmer = PorterStemmer()
 index = defaultdict(list)
 doc_urls = {}
 seen_urls = set()
+seen_hashes = {}
+duplicate_urls = {}
 partial_file_paths = []
 
 def tokenize(text):
@@ -118,6 +120,15 @@ def build_index():
             continue
 
         seen_urls.add(url)
+
+        # Exact duplicate detection: a different URL whose HTML is identical to a page we already have.
+        # It gets no doc id, so it is not indexed.
+        digest = hashlib.sha256(html.encode("utf-8", errors="ignore")).hexdigest()
+        if digest in seen_hashes:
+            duplicate_urls[url] = seen_hashes[digest]
+            continue
+        seen_hashes[digest] = url
+
         doc_urls[doc_id] = url
         index_document(doc_id, html)
         doc_id += 1
@@ -132,6 +143,7 @@ def report_stats(num_terms, final_path="index.txt"):
     """Prints the numbers for the report."""
     size_kb = os.path.getsize(final_path) / 1024
     print("Indexed documents:", len(doc_urls))
+    print("Exact duplicate pages skipped:", len(duplicate_urls))
     print("Unique terms:", num_terms)
     print("Index size on disk (KB):", size_kb)
 
