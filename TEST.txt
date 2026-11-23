@@ -1,0 +1,39 @@
+# Every non-commented line counts as a query that gets evaluated by the search engine.
+# For Milestone 3. Run with python3 search.py --eval
+
+# Milestone 2 queries:
+cristina lopes
+machine learning
+ACM
+master of software engineering
+
+# Other queries expected to do well:
+computer science
+science of computers
+operating systems
+information retrieval
+
+# all queries below are suspected to not do as well
+
+# Sequence of very common words:
+to be or not to be
+the and or
+what is the best
+how do i code?
+
+# Typos
+compter sceince
+informtion retreival
+isc
+
+# One very common word:
+irvine
+research
+uci
+of
+a
+
+# Contains numbers/dashes:
+cs 121 information retrieval
+cs121 information retrieval
+spanish-speaking people

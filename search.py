@@ -5,12 +5,14 @@ import sys
 import time
 from pathlib import Path
 from inverter import tokenize, stemmer
+from norms import IMPORTANT_BOOST
 
 INDEX_PATH = Path("index.txt")
 OFFSET_PATH = Path("offsets.json")
 DOCS_PATH = Path("docs_urls.json")
 TOP_K = 5
-IMPORTANT_BOOST = 0.5 # for titles/headings to make them more important than body text
+NORMS_PATH = Path("doc_norms.json")
+NORMS_POWER = 1.0 # 1 = full cosine length normalization, 0 is none
 
 REPORT_QUERIES = ["cristina lopes", "machine learning", "ACM", "master of software engineering"]
 SLOW_MS = 300
@@ -38,7 +40,20 @@ class Searcher:
 
         self.docs_urls = {int(doc_id): url for doc_id, url in raw_urls.items()}
         self.num_docs = len(self.docs_urls)
+
+        self.norms = None
+        if NORMS_PATH.exists():
+            with open(NORMS_PATH, "r", encoding="utf-8") as file:
+                norms = json.load(file)
+            if len(norms) == self.num_docs:
+                self.norms = [norm ** NORMS_POWER for norm in norms]
+            else:
+                print(f"{NORMS_PATH} does not match the index (stale?). Run norms.py again.", file=sys.stderr)
+        else:
+            print(f"{NORMS_PATH} not found, so scores are not length-normalized. Run norms.py to create it.", file=sys.stderr)
+
         self.index_file = open(INDEX_PATH, "rb")
+
 
     def close(self):
         self.index_file.close()
@@ -49,18 +64,16 @@ class Searcher:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
+
     @staticmethod
     def _parse_postings(postings):
         """Parse 'doc:tf:important, doc:tf:important, ...' into {doc_id: (tf, important), ...}."""
         if isinstance(postings, bytes):
             postings = postings.decode("utf-8")
-        parsed = {}
-        for posting in postings.split(","):
-            parts = posting.split(":")
-            if len(parts) != 3:
-                continue
-            parsed[int(parts[0])] = (int(parts[1]), bool(int(parts[2])))
-        return parsed
+
+        flat = postings.replace(":", ",").split(",")
+        return dict(zip(map(int, flat[0::3]), zip(map(int, flat[1::3]), map(int, flat[2::3]))))
+
 
     def _postings(self, term):
         offset = self.offsets.get(term)
@@ -76,46 +89,73 @@ class Searcher:
             return {}
         return self._parse_postings(postings)
 
-    def search(self, query, top_k=TOP_K):
-        """AND search. Returns parsed postings for documents, ordered by relevance."""
-        terms = query_terms(query)
-        if not terms:
-            return []
 
+    def _score(self, doc_id, posting_lists, idfs):
+        """Cosine-style tf-idf score of one document, and how many query terms it contains."""
+        score = 0.0
+        matched = 0
+        for postings, idf in zip(posting_lists, idfs):
+            entry = postings.get(doc_id)
+            if entry is not None:
+                tf, important = entry
+                score += idf * idf * (1 + math.log(tf)) * (1 + IMPORTANT_BOOST * important)
+                matched += 1
+        norm = self.norms[doc_id] if self.norms else 1.0
+        return score / norm, matched
+
+
+    def _top(self, doc_ids, posting_lists, idfs, top_k):
+        """Best top_k of doc_ids: most query terms matched first, then highest score."""
+        scored = []
+        for doc_id in doc_ids:
+            score, matched = self._score(doc_id, posting_lists, idfs)
+            scored.append((-matched, -score, doc_id))
+        best = heapq.nsmallest(top_k, scored)
+        return [(doc_id, self.docs_urls.get(doc_id, ""), -neg_score, -neg_matched) for neg_matched, neg_score, doc_id in best]
+
+
+    def search(self, query, top_k=TOP_K):
+        """Ranked search. Pages that contain all query terms come first. If there are
+        less than top_k of them, then pages matching only some terms fill in the rest.
+        Returns [(doc_id, url, score, terms_matched), ...] best first."""
+        terms = query_terms(query)
         posting_lists = []
         for term in terms:
             postings = self._postings(term)
-            if not postings:
-                return []
-            posting_lists.append(postings)
+            if postings:
+                posting_lists.append(postings)
+        if not posting_lists:
+            return []
+        idfs = [math.log(self.num_docs / len(postings)) for postings in posting_lists]            
 
-        posting_lists.sort(key=len)
-        candidates = set(posting_lists[0])
-        for postings in posting_lists[1:]:
-            candidates.intersection_update(postings)
-            if not candidates:
-                return []
+        results = []
+        and_docs = set()
+        if len(posting_lists) == len(terms):
+            ordered = sorted(posting_lists, key=len)
+            and_docs = set(ordered[0])
+            for postings in ordered[1:]:
+                and_docs.intersection_update(postings)
+                if not and_docs:
+                    break
+            results = self._top(and_docs, posting_lists, idfs, top_k)
 
-        idfs = [math.log(self.num_docs / len(postings)) for postings in posting_lists]
-        scored = []
-        for doc_id in candidates:
-            score = 0.0
-            for postings, idf in zip(posting_lists, idfs):
-                tf, important = postings[doc_id]
-                score += (1 + math.log(tf)) * idf * (1 + IMPORTANT_BOOST * important)
-            scored.append((score, doc_id))
+        if len(results) < top_k:
+            partial_docs = set().union(*posting_lists) - and_docs
+            results += self._top(partial_docs, posting_lists, idfs, top_k - len(results))
 
-        best = heapq.nsmallest(top_k, scored, key=lambda x: (-x[0], x[1]))
-        return [(doc_id, self.docs_urls.get(doc_id, ""), score) for score, doc_id in best]
+        return results
+    
 
 def print_results(query, results, elapsed_ms):
+    total = len(query_terms(query))
     print(f'\nResults for "{query}" (AND, top {TOP_K}, {elapsed_ms:.2f} ms):')
     if not results:
         print("No documents found.")
         return
 
-    for rank, (_, url, score) in enumerate(results, 1):
-        print(f"{rank}. {url}    (score {score:.3f})")
+    for rank, (_, url, score, matched) in enumerate(results, 1):
+        note = "" if matched == total else f"   [matches {matched} of {total} terms]"
+        print(f"{rank}. {url}    (score {score:.3f}){note}")
 
 def run_query(searcher, query):
     start = time.perf_counter()
@@ -136,9 +176,17 @@ def run_eval(searcher, path="TEST.txt"):
         start = time.perf_counter()
         results = searcher.search(query)
         elapsed_ms = (time.perf_counter() - start) * 1000
-        flag = "NO RESULTS" if not results else ("SLOW" if elapsed_ms > SLOW_MS else "ok")
+        total = len(query_terms(query))
+        flags = []
+        if not results:
+            flags.append("NO RESULTS")
+        if elapsed_ms > SLOW_MS:
+            flags.append("SLOW")
+        if any(result[3] < total for result in results):
+            flags.append("PARTIAL")
+        flag = "+".join(flags) or "ok"
         top_url = results[0][1] if results else "-"
-        print(f"{flag:10} {elapsed_ms:7.1f} ms  {query!r:40} top: {top_url}")
+        print(f"{flag:14} {elapsed_ms:7.1f} ms  {query!r:40} top: {top_url}")
 
 def main():
     try:
@@ -161,7 +209,7 @@ def main():
             run_query(searcher, " ".join(sys.argv[1:]).strip())
             return 0
 
-        print("Boolean AND search. Type 'help' for commands, 'quit' to exit.")
+        print("Ranked search. Type 'help' for commands, 'quit' to exit.")
         while True:
             try:
                 query = input("Search> ").strip()
@@ -174,7 +222,7 @@ def main():
             if query.lower() in {"quit", "exit", "q"}:
                 break
             if query.lower() in {"help", "?"}:
-                print("Enter terms separated by spaces to search for documents containing all of them.")
+                print("Enter terms separated by spaces. Results list pages with most matches.")
                 continue
             run_query(searcher, query)
     finally:
