@@ -100,3 +100,5 @@ terms with important HTML tags receive an additional boost
 document norms are applied when available
 documents containing all queries are preferred
 
+11. WEB GUI
+Run with python3 web_gui.py and then open http://localhost:8000 in a browser
